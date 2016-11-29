@@ -2,75 +2,52 @@ from ply import yacc
 from myLex import tokens, MyLexer
 from myUtils import *
 
-lexer = MyLexer(optimize=True)
-# lexer = MyLexer()
+# lexer = MyLexer(optimize=True)
+lexer = MyLexer()
 
 
 def parser():
-    def p_sentence(p):
-        """sentence: question
-                   | rule
-                   | fact"""
+    precedence = (
+        ('left', 'AND', 'OR'),
+        ('left', 'IMPLIES'),
+    )
+    def p_kb(p):
+        """kb : rule
+              | fact"""
         p[0] = p[1]
-        return p[0]
-
-    def p_question(p):
-        """question : QUESTION query"""
-        p[0] = p[2]
-
-    def p_query(p):
-        """query : PREDICATE LPAREN arguments RPAREN
-                 | NOT query"""
-        if len(p) == 5:
-            p[0] = Query(p[1], p[3])
-        elif len(p) == 3:
-            p[0] = p[2].inverse()
-
-    def p_arguments(p):
-        """arguments : CONSTANT
-                     | arguments COMMA CONSTANT"""
-        if len(p) == 2:
-            p[0] = [p[1]]
-        elif len(p) == 4:
-            p[1].append(p[3])
-            p[0] = p[1]
 
     def p_rule(p):
         """rule : clause
-                | clause AND clause
-                | clause OR clause
-                | LPAREN rule RPAREN AND clause
-                | LPAREN rule RPAREN OR clause
-                | clause AND LPAREN rule RPAREN
-                | clause OR LPAREN rule RPAREN
-                | rule IMPLIES clause
+                | rule OR rule
+                | rule AND rule
+                | rule IMPLIES rule
                 | LPAREN rule RPAREN
                 | NOT LPAREN rule RPAREN"""
-        def and_rule(_rule, clause):
-            if "AND" in _rule:
-                _rule["AND"].append(clause)
-            elif "OR" in _rule:
-                for r in _rule["OR"]:
+        def or_rule(_rule, clause):
+            if "OR" in _rule:
+                _rule["OR"].append(clause)
+            elif "AND" in _rule:
+                for r in _rule["AND"]:
                     r.append(clause)
             return _rule
 
-        def or_rule(_rule, clause):
-            new_list = []
+        def and_rule(_rule, clause):
+            new_list = list()
             new_list.append(clause)
-            if "AND" in _rule:
-                new_rule = {"OR": [new_list, _rule["AND"]]}
+            if "OR" in _rule:
+                new_rule = {"AND": [new_list, _rule["OR"]]}
                 return new_rule
-            elif "OR" in _rule:
-                _rule["OR"].append(new_list)
+            elif "AND" in _rule:
+                _rule["AND"].append(new_list)
                 return _rule
 
         def not_rule(_rule):
-            if "AND" in _rule:
-                _rule["OR"] = []
-                for item in _rule["AND"]:
+            if "OR" in _rule:
+                _rule["AND"] = []
+                for item in _rule["OR"]:
                     item.inverse()
-                    _rule["OR"].append([item])
-                del _rule["AND"]
+                    _rule["AND"].append([item])
+                del _rule["OR"]
                 return _rule
             else:
                 def bfs(src, goal, l, crt_rec, end):
@@ -87,39 +64,53 @@ def parser():
 
                 lens = []
                 record = []
-                for line in _rule["OR"]:
+                for line in _rule["AND"]:
                     lens.append(len(line))
                     record.append(0)
                     for item in line:
                         item.inverse()
                 matrix = []
-                bfs(_rule["OR"], matrix, len(lens), record, lens)
-                _rule["OR"] = matrix
+                bfs(_rule["AND"], matrix, len(lens), record, lens)
+                _rule["AND"] = matrix
                 return _rule
 
+        def rule_or_rule(r1, r2):
+            if "OR" in r1:
+                for clause in r1["OR"]:
+                    r2 = or_rule(r2, clause)
+            elif "OR" in r2:
+                for clause in r2["OR"]:
+                    r2 = or_rule(r1, clause)
+            else:
+                for line in r1["AND"]:
+                    r2 = rule_or_rule({"OR": line}, r2)
+            return r2
+
+        def rule_and_rule(r1, r2):
+            if "OR" in r1:
+                for clause in r1["OR"]:
+                    r2 = and_rule(r2, clause)
+            elif "OR" in r2:
+                for clause in r2["OR"]:
+                    r2 = and_rule(r2, clause)
+            else:
+                r2["AND"].extend(r1["AND"])
+            return r2
+
         if len(p) == 2:
-            p[0] = {"AND": [p[1]]}
-        elif len(p) == 4 and p[2] == '&':  # clause AND clause
-            p[0] = {"AND": [p[1], p[3]]}
-        elif len(p) == 4 and p[2] == '|':  # clause OR clause
-            p[0] = {"OR": [[p[1]], [p[3]]]}
-        elif len(p) == 6 and p[4] == '&':  # LPAREN rule RPAREN AND clause
-            p[0] = and_rule(p[2], p[5])
-        elif len(p) == 6 and p[4] == '|':  # LPAREN rule RPAREN OR clause
-            p[0] = or_rule(p[2], p[5])
-        elif len(p) == 6 and p[2] == '&':  # clause AND LPAREN rule RPAREN
-            p[0] = and_rule(p[4], p[1])
-        elif len(p) == 6 and p[2] == '|':  # clause OR LPAREN rule RPAREN
-            p[0] = or_rule(p[4], p[1])
-        elif len(p) == 4 and p[2] == '=>':  # rule = rule => clause
+            p[0] = {"OR": [p[1]]}
+        elif p[2] == '|':
+            p[0] = rule_or_rule(p[1], p[3])
+        elif p[2] == '&':
+            p[0] = rule_and_rule(p[1], p[3])
+        elif p[2] == '=>':
             rule = not_rule(p[1])
-            p[0] = or_rule(rule, p[3])
-        elif len(p) == 4 and p[1] == '(':
+            p[0] = rule_or_rule(rule, p[3])
+        elif p[1] == '(':
             p[0] = p[2]
-        elif len(p) == 5 and p[1] == '~':
+        elif p[1] == '~':
             p[0] = not_rule(p[3])
-        else:
-            print(len(p))
+
 
     def p_clause(p):
         """clause : PREDICATE LPAREN variables RPAREN
@@ -162,4 +153,3 @@ def parser():
         print("Syntax error at '%s'" % p.value)
 
     return yacc.yacc()
-
