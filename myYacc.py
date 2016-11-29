@@ -11,10 +11,33 @@ def parser():
         ('left', 'AND', 'OR'),
         ('left', 'IMPLIES'),
     )
-    def p_kb(p):
-        """kb : rule
-              | fact"""
+    def p_sentence(p):
+        """sentence : question
+                    | rule
+                    | fact"""
         p[0] = p[1]
+
+    def p_question(p):
+        """question : QUESTION query"""
+        p[0] = [2]
+
+    def p_query(p):
+        """query : PREDICATE LPAREN arguments RPAREN
+                 | NOT query"""
+        if len(p) == 5:
+            p[0] = Query(p[1]. p[3])
+        elif len(p) == 3:
+            p[0] = p[2].inverse()
+            
+    def p_arguments(p):
+        """arguments : CONSTANT
+                     | arguments COMMA CONSTANT"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        elif len(p) == 4:
+            p[1].append(p[3])
+            p[0] = p[1]
+
 
     def p_rule(p):
         """rule : clause
