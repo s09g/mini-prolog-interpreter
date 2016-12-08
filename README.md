@@ -1,2 +1,6 @@
 ### mini-prolog
 *a mini prolog interpreter on python*<br/>
+
+
+somehow I sucked on the algorithm...
+It may take a while to solve it...
